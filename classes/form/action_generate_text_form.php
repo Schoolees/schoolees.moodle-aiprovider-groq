@@ -31,6 +31,27 @@ class action_generate_text_form extends action_settings_form {
         \aiprovider_groq\compat::ensure_moodle_pear_loaded();
 
         $mform = $this->_form;
+
+        // Required context for core /ai/configure_actions.php processing.
+        $providername = $this->_customdata['providername'] ?? '';
+        $providerid = $this->_customdata['providerid'] ?? 0;
+        $action = $this->_customdata['action'] ?? '';
+        $returnurl = $this->_customdata['returnurl'] ?? '';
+
+        $mform->addElement('hidden', 'provider', $providername);
+        $mform->setType('provider', PARAM_PLUGIN);
+
+        $mform->addElement('hidden', 'providerid', $providerid);
+        $mform->setType('providerid', PARAM_INT);
+
+        $mform->addElement('hidden', 'action', $action);
+        $mform->setType('action', PARAM_TEXT);
+
+        if (!empty($returnurl)) {
+            $mform->addElement('hidden', 'returnurl', (string) $returnurl);
+            $mform->setType('returnurl', PARAM_LOCALURL);
+        }
+
         $actionname = $this->_customdata['actionname'] ?? 'generate_text';
         $action = $this->_customdata['action'] ?? null;
 
