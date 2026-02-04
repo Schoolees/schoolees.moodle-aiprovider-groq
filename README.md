@@ -3,9 +3,6 @@
 ## Summary
 Schoolees Groq AI Provider adds **Groq Cloud** as an **AI Provider** for Moodle’s **AI subsystem** (Moodle **5.0+**). It allows Moodle AI actions (e.g. Generate text, Summarise text) to be served by Groq’s OpenAI-compatible Chat Completions API.
 
-This is a **Schoolees-branded fork** of:
-- https://github.com/marcusgreen/moodle-aiprovider_groq
-
 ## Requirements
 - Moodle **5.0+** (AI subsystem)
 - A Groq API key
@@ -42,6 +39,19 @@ You can configure per action:
 - Temperature
 - System instruction
 
+## Testing / troubleshooting
+### `test_connection.php`
+This plugin includes a simple test script:
+
+- `test_connection.php`
+
+It can be used to quickly verify that the provider can reach Groq and receive a valid response.
+
+**Notes / safety:**
+- Run it **only as an admin** and preferably in a safe environment.
+- Do not expose the script publicly.
+- The script requires that your provider API key is already configured.
+
 ## Privacy
 When enabled, this provider sends data to Groq to generate responses.
 
@@ -77,7 +87,7 @@ If you add third‑party libraries in the future, you should include a `thirdpar
 - Upstream reference: https://github.com/marcusgreen/moodle-aiprovider_groq
 
 ## License
-GPL v3 or later (same as Moodle).
+GPL v3 or later (same as Moodle). See `LICENSE`.
 
 ## Credits
 - Original author: Marcus Green
