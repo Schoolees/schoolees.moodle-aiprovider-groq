@@ -1,0 +1,84 @@
+# Schoolees Groq AI Provider (aiprovider_groq)
+
+## Summary
+Schoolees Groq AI Provider adds **Groq Cloud** as an **AI Provider** for Moodle’s **AI subsystem** (Moodle **5.0+**). It allows Moodle AI actions (e.g. Generate text, Summarise text) to be served by Groq’s OpenAI-compatible Chat Completions API.
+
+This is a **Schoolees-branded fork** of:
+- https://github.com/marcusgreen/moodle-aiprovider_groq
+
+## Requirements
+- Moodle **5.0+** (AI subsystem)
+- A Groq API key
+  - Keys: https://console.groq.com/keys
+
+## Installation
+### Option A: Install from ZIP
+1. Site administration → Plugins → Install plugins
+2. Upload the plugin ZIP
+3. Complete the upgrade
+
+### Option B: Install by copying the folder
+Copy this plugin into your Moodle codebase at:
+
+```
+<your-moodle-root>/ai/provider/groq
+```
+
+Then run the Moodle upgrade.
+
+## Configuration
+1. Go to **Site administration → AI → Providers**
+2. Add/enable **Schoolees Groq AI Provider**
+3. Enter your **Groq API key** (and organisation ID if required by your Groq setup)
+
+### Action settings
+Go to:
+
+**Site administration → AI → Providers → (your Groq instance) → Actions**
+
+You can configure per action:
+- Model (e.g. `llama-3.1-8b-instant`)
+- Endpoint (default: `https://api.groq.com/openai/v1/chat/completions`)
+- Temperature
+- System instruction
+
+## Privacy
+When enabled, this provider sends data to Groq to generate responses.
+
+Typically sent to Groq includes:
+- The **prompt text** for the requested action (e.g. the text you ask to summarise)
+- The configured **model** and generation parameters (e.g. temperature)
+
+Notes:
+- Groq may store/retain data according to your Groq account settings.
+- This plugin does not intentionally send personal data beyond what is included in the prompt.
+
+## Third‑party libraries
+This plugin does not bundle any additional third‑party PHP/JS libraries. It uses Moodle core APIs and libraries available in a standard Moodle installation.
+
+If you add third‑party libraries in the future, you should include a `thirdpartylibs.xml` file describing them.
+
+## What changed in the Schoolees fork?
+### Branding
+- Updated language strings to display **Schoolees** branding while keeping the original Moodle component name `aiprovider_groq` (so existing installs remain compatible).
+
+### Moodle 5+ compatibility / robustness fixes
+- **Action settings form submission fix (important)**
+  - Moodle’s `/ai/configure_actions.php` requires `provider`, `providerid`, and `action` parameters.
+  - This fork ensures the action settings forms include the required hidden fields (`provider`, `providerid`, `action`, and `returnurl`) so saving action settings does not fail with `missingparam` (e.g. “A required parameter (provider) was missing”).
+
+### Optional behaviour in this fork
+- **Summarise output guardrails**
+  - Some deployments prefer hard limits/formatting for summaries.
+  - This fork can enforce constraints server-side after the API returns (e.g. word limit and single-paragraph formatting), ensuring consistent output even when models ignore prompt instructions.
+
+## Support / Issues
+- Fork maintainer (Schoolees): use your internal tracker/process.
+- Upstream reference: https://github.com/marcusgreen/moodle-aiprovider_groq
+
+## License
+GPL v3 or later (same as Moodle).
+
+## Credits
+- Original author: Marcus Green
+- Schoolees fork: branding + Moodle 5+ fixes
