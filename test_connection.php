@@ -25,6 +25,7 @@
 require('../../../config.php');
 
 require_login();
+require_admin();
 
 $url = new moodle_url('/ai/provider/groq/test_connection.php', []);
 $PAGE->set_url($url);

@@ -28,7 +28,7 @@ $string['action:generate_image:model_desc'] = 'The model used to generate images
 $string['action:generate_text:endpoint'] = 'API endpoint';
 $string['action:generate_text:model'] = 'AI model';
 $string['action:generate_text:model_desc'] = 'The model used to generate the text response.
-A list can be found at <a href=https://console.groq.com/docs/models target="_blank"_>https://console.groq.com/docs/models</a>';
+A list can be found at <a href="https://console.groq.com/docs/models" target="_blank">https://console.groq.com/docs/models</a>.';
 $string['action:generate_text:systeminstruction'] = 'System instruction';
 $string['action:generate_text:systeminstruction_desc'] = 'This instruction is sent to the AI model along with the user\'s prompt. Editing this instruction is not recommended unless absolutely required.';
 $string['action:generate_text:temperature'] = 'Temperature';
