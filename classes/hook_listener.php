@@ -22,7 +22,7 @@ use core_ai\hook\after_ai_provider_form_hook;
  * Hook listeners for the Groq AI provider plugin.
  *
  * @package    aiprovider_groq
- * @copyright  2026
+ * @copyright  2026 Schoolees
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class hook_listener {

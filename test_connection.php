@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * TODO describe file test_connection
+ * Admin-only diagnostic page for verifying Groq provider configuration.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green

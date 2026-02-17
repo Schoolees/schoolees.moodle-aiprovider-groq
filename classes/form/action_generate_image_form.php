@@ -22,7 +22,7 @@ use core_ai\form\action_settings_form;
  * Action settings form for generate_image.
  *
  * @package    aiprovider_groq
- * @copyright  2026
+ * @copyright  2026 Schoolees
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class action_generate_image_form extends action_settings_form {

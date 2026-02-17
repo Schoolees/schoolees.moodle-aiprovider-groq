@@ -25,6 +25,11 @@ Copy this plugin into your Moodle codebase at:
 
 Then run the Moodle upgrade.
 
+### Release packaging (for Moodle.org)
+- The plugin directory name must be `groq`.
+- The release ZIP root must contain that `groq/` directory (not `aiprovider_groq/`).
+- Expected install path after extraction: `<moodle-root>/ai/provider/groq`.
+
 ## Configuration
 1. Go to **Site administration → AI → Providers**
 2. Add/enable **Schoolees Groq AI Provider**
@@ -98,7 +103,7 @@ If you add third‑party libraries in the future, you should include a `thirdpar
   - This fork can enforce constraints server-side after the API returns (e.g. word limit and single-paragraph formatting), ensuring consistent output even when models ignore prompt instructions.
 
 ## Support / Issues
-- Fork maintainer (Schoolees): use your internal tracker/process.
+- Issue tracker: https://github.com/Schoolees/schoolees.moodle-aiprovider-groq/issues
 - Upstream reference: https://github.com/marcusgreen/moodle-aiprovider_groq
 
 ## Versioning
