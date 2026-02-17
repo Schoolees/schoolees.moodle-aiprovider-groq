@@ -25,7 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'aiprovider_groq';
-$plugin->version = 2026020406;
+$plugin->version = 2026021700;
+$plugin->release = 'v1.0.0';
 $plugin->requires = 2025041400;
 $plugin->supported = [500, 599];
-$plugin->maturity = MATURITY_BETA;
+$plugin->maturity = MATURITY_STABLE;
