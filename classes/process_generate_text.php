@@ -32,21 +32,12 @@ use Psr\Http\Message\UriInterface;
 class process_generate_text extends abstract_processor {
     #[\Override]
     protected function get_endpoint(): UriInterface {
-        return new Uri((string) $this->get_action_setting('endpoint', 'https://api.groq.com/openai/v1/chat/completions'));
+        return new Uri((string) $this->get_action_setting('endpoint', self::DEFAULT_ENDPOINT));
     }
 
     #[\Override]
     protected function get_model(): string {
-        return (string) $this->get_action_setting('model', 'llama-3.1-8b-instant');
-    }
-    #[\Override]
-    protected function get_temperature(): string {
-        return (string) $this->get_action_setting('temperature', '0.2');
-    }
-
-    #[\Override]
-    protected function get_system_instruction(): string {
-        return (string) $this->get_action_setting('systeminstruction', $this->action::get_system_instruction());
+        return (string) $this->get_action_setting('model', self::DEFAULT_MODEL);
     }
 
     #[\Override]
@@ -60,23 +51,23 @@ class process_generate_text extends abstract_processor {
         $requestobj = new \stdClass();
         $requestobj->model = $this->get_model();
         $requestobj->user = $userid;
-        $requestobj->temperature = floatval($this->get_temperature());
+        $requestobj->temperature = (float) $this->get_temperature();
 
         // If there is a system string available, use it.
         $systeminstruction = $this->get_system_instruction();
-        if (!empty($systeminstruction)) {
+        if ($systeminstruction !== '') {
             $systemobj = new \stdClass();
             $systemobj->role = 'system';
             $systemobj->content = $systeminstruction;
             $requestobj->messages = [$systemobj, $userobj];
         } else {
-
             $requestobj->messages = [$userobj];
         }
+
         return new Request(
             method: 'POST',
             uri: '',
-            body: json_encode($requestobj),
+            body: json_encode($requestobj, JSON_THROW_ON_ERROR),
             headers: [
                 'Content-Type' => 'application/json',
             ],
@@ -90,9 +81,10 @@ class process_generate_text extends abstract_processor {
      * @return array The response.
      */
     protected function handle_api_success(ResponseInterface $response): array {
-        $responsebody = $response->getBody();
-        $bodyobj = json_decode($responsebody->getContents());
-        if (!is_object($bodyobj) || empty($bodyobj->choices) || empty($bodyobj->choices[0]->message->content)) {
+        $bodyobj = json_decode($response->getBody()->getContents());
+
+        $content = $bodyobj->choices[0]->message->content ?? null;
+        if (!is_object($bodyobj) || !is_string($content) || trim($content) === '') {
             return [
                 'success' => false,
                 'errorcode' => -1,
@@ -100,15 +92,17 @@ class process_generate_text extends abstract_processor {
             ];
         }
 
+        // Every field below is optional in the OpenAI-compatible response shape and Groq
+        // does not always return all of them, so read each one defensively.
         return [
             'success' => true,
-            'id' => $bodyobj->id,
-            'fingerprint' => $bodyobj->system_fingerprint,
-            'generatedcontent' => $bodyobj->choices[0]->message->content,
-            'finishreason' => $bodyobj->choices[0]->finish_reason,
-            'prompttokens' => $bodyobj->usage->prompt_tokens,
-            'completiontokens' => $bodyobj->usage->completion_tokens,
-            'model' => $this->get_model(),
+            'id' => $bodyobj->id ?? null,
+            'fingerprint' => $bodyobj->system_fingerprint ?? null,
+            'generatedcontent' => $content,
+            'finishreason' => $bodyobj->choices[0]->finish_reason ?? null,
+            'prompttokens' => $bodyobj->usage->prompt_tokens ?? null,
+            'completiontokens' => $bodyobj->usage->completion_tokens ?? null,
+            'model' => $bodyobj->model ?? $this->get_model(),
         ];
     }
 }

@@ -14,19 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace aiprovider_groq;
+
 /**
- * Version information for aiprovider_groq.
+ * Class process text explanation.
+ *
+ * Explaining text is a plain chat completion, so the generate text processor
+ * handles it unchanged. Only the action settings differ.
  *
  * @package    aiprovider_groq
- * @copyright  2024 Marcus Green
+ * @copyright  2026 Schoolees
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-$plugin->component = 'aiprovider_groq';
-$plugin->version = 2026082500;
-$plugin->release = 'v1.1.0';
-$plugin->requires = 2025041400;
-$plugin->supported = [500, 501];
-$plugin->maturity = MATURITY_STABLE;
+class process_explain_text extends process_generate_text {
+}

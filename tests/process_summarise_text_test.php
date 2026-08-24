@@ -16,22 +16,22 @@
 
 namespace aiprovider_groq;
 
-use aiprovider_groq\process_summarise_text;
+use aiprovider_groq\test\testcase_helper_trait;
 use core_ai\aiactions\base;
 use core_ai\provider;
 use GuzzleHttp\Psr7\Response;
 
 /**
- * Test Generate text provider class for OpenAI provider methods.
+ * Test the summarise text processor.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \aiprovider_groq\provider
  * @covers     \aiprovider_groq\process_summarise_text
- * @covers     \aiprovider_groq\abstract_processor
  */
 final class process_summarise_text_test extends \advanced_testcase {
+    use testcase_helper_trait;
+
     /** @var string A successful response in JSON format. */
     protected string $responsebodyjson;
 
@@ -46,213 +46,190 @@ final class process_summarise_text_test extends \advanced_testcase {
      */
     protected function setUp(): void {
         parent::setUp();
-        // Load a response body from a file.
+        $this->resetAfterTest();
+
         $this->responsebodyjson = file_get_contents(self::get_fixture_path('aiprovider_groq', 'text_request_success.json'));
-        $this->create_provider();
-        $this->create_action();
-    }
-
-    /**
-     * Create the provider object.
-     */
-    private function create_provider(): void {
-        $this->provider = new \aiprovider_groq\provider(
-            enabled: true,
-            name: 'Groq',
-            description: '',
-            model: '',
-            config: '{}',
-            actionconfig: '',
-        );
-    }
-
-    /**
-     * Create the action object.
-     * @param int $userid The user id to use in the action.
-     */
-    private function create_action(int $userid = 1): void {
+        $this->provider = $this->create_provider(\core_ai\aiactions\summarise_text::class);
         $this->action = new \core_ai\aiactions\summarise_text(
             contextid: 1,
-            userid: $userid,
+            userid: 1,
             prompttext: 'This is a test prompt',
         );
     }
 
     /**
-     * Test create_request_object
+     * Build a processor with the given summarise settings.
+     *
+     * @param array $settings Action settings to apply.
+     * @return process_summarise_text
+     */
+    private function get_processor(array $settings = []): process_summarise_text {
+        $provider = $settings
+            ? $this->create_provider(\core_ai\aiactions\summarise_text::class, $settings)
+            : $this->provider;
+
+        return new process_summarise_text($provider, $this->action);
+    }
+
+    /**
+     * Build a 200 response carrying the given generated content.
+     *
+     * @param string $content The content the model returned.
+     * @return Response
+     */
+    private function content_response(string $content): Response {
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'id' => 'chatcmpl-test',
+            'model' => abstract_processor::DEFAULT_MODEL,
+            'choices' => [['message' => ['content' => $content], 'finish_reason' => 'stop']],
+            'usage' => ['prompt_tokens' => 11, 'completion_tokens' => 568],
+        ]));
+    }
+
+    /**
+     * Test create_request_object.
      */
     public function test_create_request_object(): void {
-        $processor = new process_summarise_text($this->provider, $this->action);
+        $processor = $this->get_processor();
 
-        // We're working with a private method here, so we need to use reflection.
         $method = new \ReflectionMethod($processor, 'create_request_object');
-        $request = $method->invoke($processor, 1);
-
-        $body = (object) json_decode($request->getBody()->getContents());
+        $body = json_decode($method->invoke($processor, 'hasheduserid')->getBody()->getContents());
 
         $this->assertEquals('system', $body->messages[0]->role);
-        $this->assertEquals(get_string('action_summarise_text_instruction', 'core_ai'), $body->messages[0]->content);
+        $this->assertStringContainsString(
+            get_string('action_summarise_text_instruction', 'core_ai'),
+            $body->messages[0]->content,
+        );
+        // The configured guardrails are also asked for in the prompt.
+        $this->assertStringContainsString('maximum of 500 words', $body->messages[0]->content);
+        $this->assertStringContainsString('single paragraph', $body->messages[0]->content);
         $this->assertEquals('This is a test prompt', $body->messages[1]->content);
         $this->assertEquals('user', $body->messages[1]->role);
     }
 
     /**
-     * Test the API error response handler method.
-     *
+     * With the guardrails switched off, nothing is appended to the instruction.
      */
-    public function test_handle_api_error(): void {
-        $responses = [
-            500 => new Response(500, ['Content-Type' => 'application/json']),
-            503 => new Response(503, ['Content-Type' => 'application/json']),
-            401 => new Response(401, ['Content-Type' => 'application/json'],
-                '{"error": {"message": "Invalid Authentication"}}'),
-            404 => new Response(404, ['Content-Type' => 'application/json'],
-                '{"error": {"message": "You must be a member of an organization to use the API"}}'),
-            429 => new Response(429, ['Content-Type' => 'application/json'],
-                '{"error": {"message": "Rate limit reached for requests"}}'),
-        ];
+    public function test_create_request_object_without_guardrails(): void {
+        $processor = $this->get_processor(['wordlimit' => 0, 'singleparagraph' => 0]);
 
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $method = new \ReflectionMethod($processor, 'handle_api_error');
+        $method = new \ReflectionMethod($processor, 'create_request_object');
+        $body = json_decode($method->invoke($processor, 'hasheduserid')->getBody()->getContents());
 
-        foreach ($responses as $status => $response) {
-            $result = $method->invoke($processor, $response);
-            $this->assertEquals($status, $result['errorcode']);
-            if ($status == 500) {
-                $this->assertEquals('Internal Server Error', $result['errormessage']);
-            } else if ($status == 503) {
-                $this->assertEquals('Service Unavailable', $result['errormessage']);
-            } else {
-                $this->assertStringContainsString($response->getBody()->getContents(), $result['errormessage']);
-            }
-        }
+        $this->assertEquals(
+            get_string('action_summarise_text_instruction', 'core_ai'),
+            $body->messages[0]->content,
+        );
     }
 
     /**
      * Test the API success response handler method.
      */
     public function test_handle_api_success(): void {
-        $response = new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        );
-
-        // We're testing a private method, so we need to set up reflector magic.
-        $processor = new process_summarise_text($this->provider, $this->action);
+        $processor = $this->get_processor();
         $method = new \ReflectionMethod($processor, 'handle_api_success');
 
-        $result = $method->invoke($processor, $response);
-
-        $this->assertTrue($result['success']);
-        $this->assertEquals('chatcmpl-9lkwPWOIiQEvI3nfcGofJcmS5lPYo', $result['id']);
-        $this->assertEquals('fp_c4e5b6fa31', $result['fingerprint']);
-        $this->assertStringContainsString('Sure, here is some sample text', $result['generatedcontent']);
-        $this->assertEquals('stop', $result['finishreason']);
-        $this->assertEquals('11', $result['prompttokens']);
-        $this->assertEquals('568', $result['completiontokens']);
-
-    }
-
-    /**
-     * Test query_ai_api for a successful call.
-     */
-    public function test_query_ai_api_success(): void {
-        // Mock the http client to return a successful response.
-        ['mock' => $mock] = $this->get_mocked_http_client();
-
-        // The response from OpenAI.
-        $mock->append(new Response(
+        $result = $method->invoke($processor, new Response(
             200,
             ['Content-Type' => 'application/json'],
             $this->responsebodyjson,
         ));
 
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $method = new \ReflectionMethod($processor, 'query_ai_api');
-        $result = $method->invoke($processor);
-
         $this->assertTrue($result['success']);
         $this->assertEquals('chatcmpl-9lkwPWOIiQEvI3nfcGofJcmS5lPYo', $result['id']);
-        $this->assertEquals('fp_c4e5b6fa31', $result['fingerprint']);
         $this->assertStringContainsString('Sure, here is some sample text', $result['generatedcontent']);
         $this->assertEquals('stop', $result['finishreason']);
-        $this->assertEquals('11', $result['prompttokens']);
-        $this->assertEquals('568', $result['completiontokens']);
     }
 
     /**
-     * Test prepare_response success.
+     * A multi-line summary is collapsed when the single paragraph guardrail is on.
      */
-    public function test_prepare_response_success(): void {
-        $processor = new process_summarise_text($this->provider, $this->action);
+    public function test_handle_api_success_collapses_paragraphs(): void {
+        $processor = $this->get_processor();
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
 
-        // We're working with a private method here, so we need to use reflection.
-        $method = new \ReflectionMethod($processor, 'prepare_response');
+        $result = $method->invoke($processor, $this->content_response("First line.\n\n- Second line.\n- Third line."));
 
-        $response = [
-            'success' => true,
-            'id' => 'chatcmpl-9lkwPWOIiQEvI3nfcGofJcmS5lPYo',
-            'fingerprint' => 'fp_c4e5b6fa31',
-            'generatedcontent' => 'Sure, here is some sample text',
-            'finishreason' => 'stop',
-            'prompttokens' => '11',
-            'completiontokens' => '568',
-        ];
-
-        $result = $method->invoke($processor, $response);
-
-        $this->assertInstanceOf(\core_ai\aiactions\responses\response_base::class, $result);
-        $this->assertTrue($result->get_success());
-        $this->assertEquals('summarise_text', $result->get_actionname());
-        $this->assertEquals($response['success'], $result->get_success());
-        $this->assertEquals($response['generatedcontent'], $result->get_response_data()['generatedcontent']);
+        $this->assertEquals('First line. - Second line. - Third line.', $result['generatedcontent']);
     }
 
     /**
-     * Test prepare_response error.
+     * Line breaks survive when the single paragraph guardrail is off.
      */
-    public function test_prepare_response_error(): void {
-        $processor = new process_summarise_text($this->provider, $this->action);
+    public function test_handle_api_success_keeps_paragraphs_when_disabled(): void {
+        $processor = $this->get_processor(['singleparagraph' => 0]);
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
 
-        // We're working with a private method here, so we need to use reflection.
-        $method = new \ReflectionMethod($processor, 'prepare_response');
+        $result = $method->invoke($processor, $this->content_response("First line.\n\nSecond line."));
 
-        $response = [
-            'success' => false,
-            'errorcode' => 500,
-            'errormessage' => 'Internal server error.',
-        ];
+        $this->assertEquals("First line.\n\nSecond line.", $result['generatedcontent']);
+    }
 
-        $result = $method->invoke($processor, $response);
+    /**
+     * An over-long summary is cut back at a sentence boundary.
+     */
+    public function test_handle_api_success_applies_word_limit(): void {
+        $processor = $this->get_processor(['wordlimit' => 6]);
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
 
-        $this->assertInstanceOf(\core_ai\aiactions\responses\response_base::class, $result);
-        $this->assertFalse($result->get_success());
-        $this->assertEquals('summarise_text', $result->get_actionname());
-        $this->assertEquals($response['errorcode'], $result->get_errorcode());
-        $this->assertEquals($response['errormessage'], $result->get_errormessage());
+        $result = $method->invoke($processor, $this->content_response(
+            'Alpha beta gamma delta epsilon. Zeta eta theta iota kappa.',
+        ));
+
+        $this->assertEquals('Alpha beta gamma delta epsilon.', $result['generatedcontent']);
+    }
+
+    /**
+     * With no sentence boundary to cut at, the text is trimmed and marked as truncated.
+     */
+    public function test_handle_api_success_word_limit_without_sentence_break(): void {
+        $processor = $this->get_processor(['wordlimit' => 3]);
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
+
+        $result = $method->invoke($processor, $this->content_response('one two three four five six seven'));
+
+        $this->assertEquals('one two three...', $result['generatedcontent']);
+    }
+
+    /**
+     * A word limit of zero leaves the summary untouched.
+     */
+    public function test_handle_api_success_without_word_limit(): void {
+        $processor = $this->get_processor(['wordlimit' => 0]);
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
+
+        $content = 'one two three four five six seven eight nine ten eleven twelve';
+        $result = $method->invoke($processor, $this->content_response($content));
+
+        $this->assertEquals($content, $result['generatedcontent']);
+    }
+
+    /**
+     * The guardrails must not turn a failed response into a success.
+     */
+    public function test_handle_api_success_passes_through_failure(): void {
+        $processor = $this->get_processor();
+        $method = new \ReflectionMethod($processor, 'handle_api_success');
+
+        $result = $method->invoke($processor, new Response(
+            200,
+            ['Content-Type' => 'application/json'],
+            json_encode(['choices' => []]),
+        ));
+
+        $this->assertFalse($result['success']);
     }
 
     /**
      * Test process method.
      */
     public function test_process(): void {
-        $this->resetAfterTest();
-        // Log in user.
         $this->setUser($this->getDataGenerator()->create_user());
 
-        // Mock the http client to return a successful response.
         ['mock' => $mock] = $this->get_mocked_http_client();
+        $mock->append(new Response(200, ['Content-Type' => 'application/json'], $this->responsebodyjson));
 
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
+        $result = $this->get_processor()->process();
 
         $this->assertInstanceOf(\core_ai\aiactions\responses\response_base::class, $result);
         $this->assertTrue($result->get_success());
@@ -263,189 +240,20 @@ final class process_summarise_text_test extends \advanced_testcase {
      * Test process method with error.
      */
     public function test_process_error(): void {
-        $this->resetAfterTest();
-        // Log in user.
         $this->setUser($this->getDataGenerator()->create_user());
 
-        // Mock the http client to return a successful response.
         ['mock' => $mock] = $this->get_mocked_http_client();
-
-        // The response from OpenAI.
         $mock->append(new Response(
             401,
             ['Content-Type' => 'application/json'],
             json_encode(['error' => ['message' => 'Invalid Authentication']]),
         ));
 
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
+        $result = $this->get_processor()->process();
 
-        $this->assertInstanceOf(\core_ai\aiactions\responses\response_base::class, $result);
         $this->assertFalse($result->get_success());
         $this->assertEquals('summarise_text', $result->get_actionname());
         $this->assertEquals(401, $result->get_errorcode());
         $this->assertEquals('Invalid Authentication', $result->get_errormessage());
-    }
-
-    /**
-     * Test process method with user rate limiter.
-     */
-    public function test_process_with_user_rate_limiter(): void {
-        $this->resetAfterTest();
-        // Create users.
-        $user1 = $this->getDataGenerator()->create_user();
-        $user2 = $this->getDataGenerator()->create_user();
-        // Log in user1.
-        $this->setUser($user1);
-        // Mock clock.
-        $clock = $this->mock_clock_with_frozen();
-
-        // Set the user rate limiter.
-        set_config('enableuserratelimit', 1, 'aiprovider_groq');
-        set_config('userratelimit', 1, 'aiprovider_groq');
-
-        // Mock the http client to return a successful response.
-        ['mock' => $mock] = $this->get_mocked_http_client();
-
-        // Case 1: User rate limit has not been reached.
-        $this->create_provider();
-        $this->create_action($user1->id);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertTrue($result->get_success());
-
-        // Case 2: User rate limit has been reached.
-        $clock->bump(HOURSECS - 10);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $this->create_provider();
-        $this->create_action($user1->id);
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertEquals(429, $result->get_errorcode());
-        $this->assertEquals('User rate limit exceeded', $result->get_errormessage());
-        $this->assertFalse($result->get_success());
-
-        // Case 3: User rate limit has not been reached for a different user.
-        // Log in user2.
-        $this->setUser($user2);
-        $this->create_provider();
-        $this->create_action($user2->id);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertTrue($result->get_success());
-
-        // Case 4: Time window has passed, user rate limit should be reset.
-        $clock->bump(11);
-        // Log in user1.
-        $this->setUser($user1);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $this->create_provider();
-        $this->create_action($user1->id);
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertTrue($result->get_success());
-    }
-
-    /**
-     * Test process method with global rate limiter.
-     */
-    public function test_process_with_global_rate_limiter(): void {
-        $this->resetAfterTest();
-        // Create users.
-        $user1 = $this->getDataGenerator()->create_user();
-        $user2 = $this->getDataGenerator()->create_user();
-        // Log in user1.
-        $this->setUser($user1);
-        // Mock clock.
-        $clock = $this->mock_clock_with_frozen();
-
-        // Set the global rate limiter.
-        set_config('enableglobalratelimit', 1, 'aiprovider_groq');
-        set_config('globalratelimit', 1, 'aiprovider_groq');
-
-        // Mock the http client to return a successful response.
-        ['mock' => $mock] = $this->get_mocked_http_client();
-
-        // Case 1: Global rate limit has not been reached.
-        $this->create_provider();
-        $this->create_action($user1->id);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertTrue($result->get_success());
-
-        // Case 2: Global rate limit has been reached.
-        $clock->bump(HOURSECS - 10);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $this->create_provider();
-        $this->create_action($user1->id);
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertEquals(429, $result->get_errorcode());
-        $this->assertEquals('Global rate limit exceeded', $result->get_errormessage());
-        $this->assertFalse($result->get_success());
-
-        // Case 3: Global rate limit has been reached for a different user too.
-        // Log in user2.
-        $this->setUser($user2);
-        $this->create_provider();
-        $this->create_action($user2->id);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertFalse($result->get_success());
-
-        // Case 4: Time window has passed, global rate limit should be reset.
-        $clock->bump(11);
-        // Log in user1.
-        $this->setUser($user1);
-        // The response from OpenAI.
-        $mock->append(new Response(
-            200,
-            ['Content-Type' => 'application/json'],
-            $this->responsebodyjson,
-        ));
-        $this->create_provider();
-        $this->create_action($user1->id);
-        $processor = new process_summarise_text($this->provider, $this->action);
-        $result = $processor->process();
-        $this->assertTrue($result->get_success());
     }
 }

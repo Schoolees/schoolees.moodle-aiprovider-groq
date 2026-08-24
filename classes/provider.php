@@ -16,53 +16,41 @@
 
 namespace aiprovider_groq;
 
-use core_ai\aiactions;
 use core_ai\form\action_settings_form;
-use core_ai\rate_limiter;
 use Psr\Http\Message\RequestInterface;
 
 /**
- * Class provider.
+ * Groq AI provider.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider extends \core_ai\provider {
-    /**
-     * Get a provider instance setting, falling back to legacy plugin config.
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    private function get_provider_setting(string $key, mixed $default = null): mixed {
-        if (isset($this->config[$key])) {
-            return $this->config[$key];
-        }
-        $legacy = get_config('aiprovider_groq', $key);
-        return $legacy !== false && $legacy !== null ? $legacy : $default;
-    }
+    /** @var string[] The actions handled by the chat completions API. */
+    private const TEXT_ACTIONS = ['generate_text', 'summarise_text', 'explain_text'];
 
     /**
      * Get the list of actions that this provider supports.
+     *
+     * Groq Cloud only exposes text (chat completion) models, so image generation
+     * is deliberately not offered here.
      *
      * @return array An array of action class names.
      */
     public static function get_action_list(): array {
         return [
             \core_ai\aiactions\generate_text::class,
-            \core_ai\aiactions\generate_image::class,
             \core_ai\aiactions\summarise_text::class,
+            \core_ai\aiactions\explain_text::class,
         ];
     }
 
     /**
      * Generate a user id.
      *
-     * This is a hash of the site id and user id,
-     * this means we can determine who made the request
-     * but don't pass any personal data to OpenAI.
+     * This is a hash of the site id and user id, this means we can determine
+     * who made the request but don't pass any personal data to Groq.
      *
      * @param string $userid The user id.
      * @return string The generated user id.
@@ -79,64 +67,13 @@ class provider extends \core_ai\provider {
      * @return \Psr\Http\Message\RequestInterface
      */
     public function add_authentication_headers(RequestInterface $request): RequestInterface {
-        $apikey = (string) $this->get_provider_setting('apikey', '');
-        $orgid = (string) $this->get_provider_setting('orgid', '');
+        $apikey = (string) ($this->config['apikey'] ?? '');
 
-        $request = $request->withAddedHeader('Authorization', "Bearer {$apikey}");
-        if (!empty($orgid)) {
-            $request = $request->withAddedHeader('OpenAI-Organization', $orgid);
-        }
-        return $request;
+        return $request->withHeader('Authorization', "Bearer {$apikey}");
     }
 
     /**
-     * Check if the request is allowed by the rate limiter.
-     *
-     * @param aiactions\base $action The action to check.
-     * @return array|bool True on success, array of error details on failure.
-     */
-    public function is_request_allowed(aiactions\base $action): array|bool {
-        $ratelimiter = \core\di::get(rate_limiter::class);
-        $component = \core\component::get_component_from_classname(get_class($this));
-
-        // Check the user rate limit.
-        $enableuserratelimit = (bool) $this->get_provider_setting('enableuserratelimit', false);
-        $userratelimit = (int) $this->get_provider_setting('userratelimit', 0);
-        if ($enableuserratelimit) {
-            if (!$ratelimiter->check_user_rate_limit(
-                component: $component,
-                ratelimit: $userratelimit,
-                userid: $action->get_configuration('userid')
-            )) {
-                return [
-                    'success' => false,
-                    'errorcode' => 429,
-                    'errormessage' => 'User rate limit exceeded',
-                ];
-            }
-        }
-
-        // Check the global rate limit.
-        $enableglobalratelimit = (bool) $this->get_provider_setting('enableglobalratelimit', false);
-        $globalratelimit = (int) $this->get_provider_setting('globalratelimit', 0);
-        if ($enableglobalratelimit) {
-            if (!$ratelimiter->check_global_rate_limit(
-                component: $component,
-                ratelimit: $globalratelimit
-            )) {
-                return [
-                    'success' => false,
-                    'errorcode' => 429,
-                    'errormessage' => 'Global rate limit exceeded',
-                ];
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Get the settings form for a specific action (Moodle 5+).
+     * Get the settings form for a specific action.
      *
      * @param string $action The action class name.
      * @param array $customdata Custom data passed by core.
@@ -147,15 +84,36 @@ class provider extends \core_ai\provider {
         $customdata['actionname'] = $actionname;
         $customdata['action'] = $action;
 
-        if ($actionname === 'generate_text' || $actionname === 'summarise_text') {
-            return new \aiprovider_groq\form\action_generate_text_form(null, $customdata);
-        }
-
-        if ($actionname === 'generate_image') {
-            return new \aiprovider_groq\form\action_generate_image_form(null, $customdata);
+        if (in_array($actionname, self::TEXT_ACTIONS, true)) {
+            return new form\action_generate_text_form(customdata: $customdata);
         }
 
         return false;
+    }
+
+    /**
+     * Get the default settings for an action.
+     *
+     * Without this, a newly created provider instance has no model or endpoint
+     * configured until an administrator opens and saves the action settings form.
+     *
+     * @param string $action The action class name.
+     * @return array The default settings for the action.
+     */
+    public static function get_action_setting_defaults(string $action): array {
+        $actionname = substr($action, (strrpos($action, '\\') + 1));
+
+        if (!in_array($actionname, self::TEXT_ACTIONS, true)) {
+            return [];
+        }
+
+        $mform = new form\action_generate_text_form(customdata: [
+            'actionname' => $actionname,
+            'action' => $action,
+            'providername' => 'aiprovider_groq',
+        ]);
+
+        return $mform->get_defaults();
     }
 
     /**
@@ -164,6 +122,6 @@ class provider extends \core_ai\provider {
      * @return bool Return true if configured.
      */
     public function is_provider_configured(): bool {
-        return !empty($this->get_provider_setting('apikey', ''));
+        return !empty($this->config['apikey']);
     }
 }

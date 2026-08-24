@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Admin-only diagnostic page for verifying Groq provider configuration.
+ * Admin-only diagnostic page for verifying the Groq provider configuration.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green
@@ -25,21 +25,55 @@
 require('../../../config.php');
 
 require_login();
-require_admin();
 
-$url = new moodle_url('/ai/provider/groq/test_connection.php', []);
-$PAGE->set_url($url);
-$PAGE->set_context(context_system::instance());
 $context = context_system::instance();
-$action = new \core_ai\aiactions\generate_text(
-    contextid: $context->id,
-    userid: $USER->id,
-    prompttext: 'Please respond to confirm I been successfull in connecting to you and return nothing else'
-);
-global $DB;
-$manager = new \core_ai\manager($DB);
-$result = $manager->process_action($action);
+require_capability('moodle/site:config', $context);
+
+$url = new moodle_url('/ai/provider/groq/test_connection.php');
+$title = get_string('testaiconfiguration', 'aiprovider_groq');
+
+$PAGE->set_context($context);
+$PAGE->set_url($url);
+$PAGE->set_pagelayout('admin');
+$PAGE->set_title($title);
 $PAGE->set_heading($SITE->fullname);
+
+// The test spends real API quota, so it only runs on an explicit, session-key protected POST.
+$run = optional_param('run', 0, PARAM_BOOL);
+
 echo $OUTPUT->header();
-echo $result->get_response_data()['generatedcontent'];
+echo $OUTPUT->heading($title);
+echo html_writer::tag('p', get_string('testintro', 'aiprovider_groq'));
+
+if ($run && confirm_sesskey()) {
+    $action = new \core_ai\aiactions\generate_text(
+        contextid: $context->id,
+        userid: $USER->id,
+        prompttext: get_string('testprompt', 'aiprovider_groq'),
+    );
+
+    $result = \core\di::get(\core_ai\manager::class)->process_action($action);
+
+    if ($result->get_success()) {
+        echo $OUTPUT->notification(
+            get_string('testsuccess', 'aiprovider_groq'),
+            \core\output\notification::NOTIFY_SUCCESS,
+        );
+        echo html_writer::tag('pre', s($result->get_response_data()['generatedcontent'] ?? ''));
+    } else {
+        echo $OUTPUT->notification(
+            get_string('testfailure', 'aiprovider_groq', (object) [
+                'code' => $result->get_errorcode(),
+                'message' => s($result->get_errormessage()),
+            ]),
+            \core\output\notification::NOTIFY_ERROR,
+        );
+    }
+}
+
+echo $OUTPUT->single_button(
+    new moodle_url($url, ['run' => 1]),
+    get_string('testaiservices', 'aiprovider_groq'),
+    'post',
+);
 echo $OUTPUT->footer();

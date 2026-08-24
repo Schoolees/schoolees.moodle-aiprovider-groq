@@ -17,7 +17,6 @@
 namespace aiprovider_groq;
 
 use core\http_client;
-use core_ai\aiactions\responses\response_base;
 use core_ai\process_base;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\RequestOptions;
@@ -26,59 +25,54 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\UriInterface;
 
 /**
- * Class process text generation.
+ * Base class for the Groq action processors.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class abstract_processor extends process_base {
-    /**
-     * Get the (short) action name (e.g. generate_text).
-     *
-     * @return string
-     */
-    protected function get_action_name(): string {
-        $action = get_class($this->action);
-        return substr($action, (strrpos($action, '\\') + 1));
-    }
+    /** @var string The default Groq OpenAI-compatible chat completions endpoint. */
+    public const DEFAULT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+
+    /** @var string The default model used when an action has not been configured. */
+    public const DEFAULT_MODEL = 'llama-3.1-8b-instant';
+
+    /** @var string The default sampling temperature. */
+    public const DEFAULT_TEMPERATURE = '0.2';
+
+    /** @var int Maximum number of characters kept from an unrecognised error body. */
+    private const ERROR_MESSAGE_MAX_LENGTH = 500;
 
     /**
-     * Get the action settings array for the current action.
+     * Get the settings stored against the action this processor handles.
      *
-     * @return array
+     * Moodle 5 keys the provider instance action config by the fully qualified
+     * action class name, so that is what we look up here.
+     *
+     * @return array The action settings, or an empty array when the action has never been configured.
      */
     protected function get_action_settings(): array {
-        $actionname = $this->get_action_name();
-        $actionconfig = $this->provider->actionconfig ?? [];
+        $settings = $this->provider->actionconfig[$this->action::class]['settings'] ?? [];
 
-        if (isset($actionconfig[$actionname]['settings']) && is_array($actionconfig[$actionname]['settings'])) {
-            return $actionconfig[$actionname]['settings'];
-        }
-
-        if (isset($actionconfig['settings']) && is_array($actionconfig['settings'])) {
-            return $actionconfig['settings'];
-        }
-
-        return [];
+        return is_array($settings) ? $settings : [];
     }
 
     /**
-     * Read an action-level setting (Moodle 5+), falling back to legacy plugin config.
+     * Read a single action setting, falling back to a default when it is absent or blank.
      *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * @param string $key The setting name.
+     * @param mixed $default The value to use when the setting has not been configured.
+     * @return mixed The configured value, or the default.
      */
     protected function get_action_setting(string $key, mixed $default = null): mixed {
         $settings = $this->get_action_settings();
-        if (array_key_exists($key, $settings)) {
+
+        if (array_key_exists($key, $settings) && $settings[$key] !== null && $settings[$key] !== '') {
             return $settings[$key];
         }
 
-        $actionname = $this->get_action_name();
-        $legacy = get_config('aiprovider_groq', "action_{$actionname}_{$key}");
-        return $legacy !== false && $legacy !== null ? $legacy : $default;
+        return $default;
     }
 
     /**
@@ -101,9 +95,8 @@ abstract class abstract_processor extends process_base {
      * @return string
      */
     protected function get_temperature(): string {
-        return (string) $this->get_action_setting("temperature", "0.2");
+        return (string) $this->get_action_setting('temperature', self::DEFAULT_TEMPERATURE);
     }
-
 
     /**
      * Get the system instructions.
@@ -111,18 +104,16 @@ abstract class abstract_processor extends process_base {
      * @return string
      */
     protected function get_system_instruction(): string {
-        return $this->action::get_system_instruction();
+        return (string) $this->get_action_setting('systeminstruction', $this->action::get_system_instruction());
     }
 
     /**
-     * Create the request object to send to the OpenAI API.
+     * Create the request object to send to the Groq API.
      *
      * This object contains all the required parameters for the request.
      *
-     *
-     *
      * @param string $userid The user id.
-     * @return RequestInterface The request object to send to the OpenAI API.
+     * @return RequestInterface The request object to send to the Groq API.
      */
     abstract protected function create_request_object(
         string $userid,
@@ -167,26 +158,17 @@ abstract class abstract_processor extends process_base {
 
         // Double-check the response codes, in case of a non 200 that didn't throw an error.
         $status = $response->getStatusCode();
-        if ($status === 200) {
-            try {
+        try {
+            if ($status === 200) {
                 return $this->handle_api_success($response);
-            } catch (\Throwable $e) {
-                return [
-                    'success' => false,
-                    'errorcode' => -1,
-                    'errormessage' => $e->getMessage() ?: 'Unexpected error processing AI response',
-                ];
             }
-        } else {
-            try {
-                return $this->handle_api_error($response);
-            } catch (\Throwable $e) {
-                return [
-                    'success' => false,
-                    'errorcode' => $status ?: -1,
-                    'errormessage' => $e->getMessage() ?: 'Unexpected error processing AI error response',
-                ];
-            }
+            return $this->handle_api_error($response);
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'errorcode' => $status === 200 ? -1 : $status,
+                'errormessage' => $e->getMessage() ?: 'Unexpected error processing the AI service response',
+            ];
         }
     }
 
@@ -197,19 +179,13 @@ abstract class abstract_processor extends process_base {
      * @return array The error response.
      */
     protected function handle_api_error(ResponseInterface $response): array {
-        $responsearr = [
-            'success' => false,
-            'errorcode' => $response->getStatusCode(),
-        ];
-
         $status = $response->getStatusCode();
-        $reason = (string) $response->getReasonPhrase();
         $body = (string) $response->getBody()->getContents();
         $bodyarr = json_decode($body, true);
 
         $message = '';
         if (is_array($bodyarr)) {
-            // OpenAI/Groq-style: {"error": {"message": "..."}}.
+            // Groq mirrors the OpenAI error shape: {"error": {"message": "..."}}.
             if (!empty($bodyarr['error']['message']) && is_string($bodyarr['error']['message'])) {
                 $message = $bodyarr['error']['message'];
             } else if (!empty($bodyarr['message']) && is_string($bodyarr['message'])) {
@@ -220,16 +196,20 @@ abstract class abstract_processor extends process_base {
         }
 
         if ($message === '') {
-            // Fallback to reason phrase or raw body.
-            $message = $reason !== '' ? $reason : trim($body);
+            // Fall back to the reason phrase, then to the raw body. The body can be a full HTML
+            // error page from an intermediate proxy, so keep only a useful prefix of it.
+            $reason = (string) $response->getReasonPhrase();
+            $message = $reason !== '' ? $reason : \core_text::substr(trim($body), 0, self::ERROR_MESSAGE_MAX_LENGTH);
         }
 
         if ($message === '') {
             $message = "External AI service returned HTTP {$status}";
         }
 
-        $responsearr['errormessage'] = $message;
-
-        return $responsearr;
+        return [
+            'success' => false,
+            'errorcode' => $status,
+            'errormessage' => $message,
+        ];
     }
 }

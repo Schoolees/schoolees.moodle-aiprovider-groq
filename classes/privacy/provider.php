@@ -23,7 +23,10 @@ use core_privacy\local\request\contextlist;
 use core_privacy\local\request\userlist;
 
 /**
- * Privacy provider implementation for OpenAI provider
+ * Privacy provider implementation for the Groq AI provider.
+ *
+ * This plugin stores nothing itself. It declares the data that leaves the site
+ * when an AI action is processed by Groq.
  *
  * @package    aiprovider_groq
  * @copyright  2024 Marcus Green
@@ -38,10 +41,12 @@ class provider implements
     public static function get_metadata(collection $collection): collection {
         $collection->add_external_location_link('aiprovider_groq', [
             'prompttext' => 'privacy:metadata:aiprovider_groq:prompttext',
+            'systeminstruction' => 'privacy:metadata:aiprovider_groq:systeminstruction',
             'model' => 'privacy:metadata:aiprovider_groq:model',
-            'numberimages' => 'privacy:metadata:aiprovider_groq:numberimages',
-            'responseformat' => 'privacy:metadata:aiprovider_groq:responseformat',
+            'temperature' => 'privacy:metadata:aiprovider_groq:temperature',
+            'userid' => 'privacy:metadata:aiprovider_groq:userid',
         ], 'privacy:metadata:aiprovider_groq:externalpurpose');
+
         return $collection;
     }
 

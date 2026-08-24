@@ -27,31 +27,29 @@ use core_ai\hook\after_ai_provider_form_hook;
  */
 class hook_listener {
     /**
-     * Add provider-instance settings fields to the AI provider form (Moodle 5+).
+     * Add the provider instance settings to the AI provider form.
      *
-     * @param after_ai_provider_form_hook $hook
+     * Core populates the field values from the stored instance config after this
+     * hook is dispatched, so no defaults are set here.
+     *
+     * @param after_ai_provider_form_hook $hook The hook to add to the AI instance setup.
      */
     public static function set_form_definition_for_aiprovider_groq(after_ai_provider_form_hook $hook): void {
         if ($hook->plugin !== 'aiprovider_groq') {
             return;
         }
 
-        compat::ensure_moodle_pear_loaded();
-
         $mform = $hook->mform;
-        $providerconfig = $hook->providerconfig ?? [];
 
-        // Use the core QuickForm 'password' element for maximum compatibility.
-        // (Some environments don’t have Moodle's password-unmask element available in this form context.)
-        $mform->addElement('password', 'apikey', get_string('apikey', 'aiprovider_groq'));
-        $mform->setType('apikey', PARAM_TEXT);
-        $mform->addRule('apikey', null, 'required', null, 'client');
-        $mform->setDefault('apikey', $providerconfig['apikey'] ?? '');
-        $mform->addElement('static', 'apikey_desc', '', get_string('apikey_desc', 'aiprovider_groq'));
-
-        $mform->addElement('text', 'orgid', get_string('orgid', 'aiprovider_groq'));
-        $mform->setType('orgid', PARAM_TEXT);
-        $mform->setDefault('orgid', $providerconfig['orgid'] ?? '');
-        $mform->addElement('static', 'orgid_desc', '', get_string('orgid_desc', 'aiprovider_groq'));
+        // Required setting to store the Groq API key.
+        $mform->addElement(
+            'passwordunmask',
+            'apikey',
+            get_string('apikey', 'aiprovider_groq'),
+            ['size' => 75],
+        );
+        $mform->setType('apikey', PARAM_RAW_TRIMMED);
+        $mform->addHelpButton('apikey', 'apikey', 'aiprovider_groq');
+        $mform->addRule('apikey', get_string('required'), 'required', null, 'client');
     }
 }
